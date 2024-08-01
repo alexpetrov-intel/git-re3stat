@@ -2,7 +2,6 @@
 
 #include "git-compat-util.h"
 #include "abspath.h"
-#include "commit.h"
 #include "config.h"
 #include "copy.h"
 #include "gettext.h"
@@ -11,17 +10,16 @@
 #include "string-list.h"
 #include "read-cache-ll.h"
 #include "rerere.h"
-#include "revision.h"
 #include "xdiff-interface.h"
 #include "dir.h"
 #include "resolve-undo.h"
 #include "merge-ll.h"
-#include "object-name.h"
 #include "path.h"
 #include "pathspec.h"
 #include "object-file.h"
 #include "object-store-ll.h"
 #include "strmap.h"
+#include "re3stat.h"
 
 #define RESOLVED 0
 #define PUNTED 1
@@ -727,45 +725,6 @@ static void remove_variant(struct rerere_id *id)
 	id->collection->status[id->variant] = 0;
 }
 
-static void re3log(const char *path, char *item)
-{
-	struct object_id oid;
-	struct commit *commitptr = NULL;
-	struct strbuf prettybuf = STRBUF_INIT;
-
-	printf("===== RE3-STAT =====\n");
-	printf("Current variant id: %s\n", item);
-	printf("Is working on path: %s\n", path);
-
-	if(repo_get_oid(the_repository, "MERGE_HEAD", &oid) == 0) {
-		commitptr = lookup_commit(the_repository, &oid);
-		strbuf_reset(&prettybuf);
-		strbuf_addstr(&prettybuf, "\nFrom MERGE_HEAD: \n");
-		strbuf_addstr(&prettybuf, oid_to_hex(&oid));
-		strbuf_addstr(&prettybuf, " - ");
-		pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
-		puts(prettybuf.buf);
-	} else {
-		printf("MERGE_HEAD gave a yucky");
-	}
-
-	if(repo_get_oid(the_repository, "ORIG_HEAD", &oid) == 0) {
-		commitptr = lookup_commit(the_repository, &oid);
-		strbuf_reset(&prettybuf);
-		strbuf_addstr(&prettybuf, "\nOn to ORIG_HEAD: \n");
-		strbuf_addstr(&prettybuf, oid_to_hex(&oid));
-		strbuf_addstr(&prettybuf, " - ");
-		pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
-		puts(prettybuf.buf);
-
-	} else {
-		printf("ORIG_HEAD gave a yucky");
-	}
-
-	strbuf_release(&prettybuf);
-	printf("====================\n");
-}
-
 /*
  * The path indicated by rr_item may still have conflict for which we
  * have a recorded resolution, in which case replay it and optionally
@@ -813,8 +772,8 @@ static void do_rerere_one_path(struct index_state *istate,
 		if (merge(istate, &vid, path))
 			continue; /* failed to replay */
 
-		//// re3stat experiment code, a replay was successful
-		re3log(path, id->collection->name);
+		//// re3stat experiment code, log a successful replay
+		save_rr_stats(path, id);
 
 		/*
 		 * If there already is a different variant that applies
