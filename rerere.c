@@ -2,6 +2,7 @@
 
 #include "git-compat-util.h"
 #include "abspath.h"
+#include "commit.h"
 #include "config.h"
 #include "copy.h"
 #include "gettext.h"
@@ -10,10 +11,12 @@
 #include "string-list.h"
 #include "read-cache-ll.h"
 #include "rerere.h"
+#include "revision.h"
 #include "xdiff-interface.h"
 #include "dir.h"
 #include "resolve-undo.h"
 #include "merge-ll.h"
+#include "object-name.h"
 #include "path.h"
 #include "pathspec.h"
 #include "object-file.h"
@@ -739,6 +742,9 @@ static void do_rerere_one_path(struct index_state *istate,
 	struct rerere_id *id = rr_item->util;
 	struct rerere_dir *rr_dir = id->collection;
 	int variant;
+	struct object_id oid; //re3stat experiment declaration
+	struct commit *commitptr = NULL; //re3stat
+	struct strbuf prettybuf = STRBUF_INIT;  //re3stat
 
 	variant = id->variant;
 
@@ -770,6 +776,40 @@ static void do_rerere_one_path(struct index_state *istate,
 		vid.variant = variant;
 		if (merge(istate, &vid, path))
 			continue; /* failed to replay */
+
+		//// re3stat experiment code start, a replay was successful
+		printf("===== RE3-STAT =====\n");
+		printf("Current variant id: %s\n", id->collection->name);
+		printf("Is working on path: %s\n", path);
+
+		if(repo_get_oid(the_repository, "MERGE_HEAD", &oid) == 0) {
+			commitptr = lookup_commit(the_repository, &oid);
+			strbuf_reset(&prettybuf);
+			strbuf_addstr(&prettybuf, "\nFrom MERGE_HEAD: \n");
+			strbuf_addstr(&prettybuf, oid_to_hex(&oid));
+			strbuf_addstr(&prettybuf, " - ");
+			pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
+			puts(prettybuf.buf);
+		} else {
+			printf("MERGE_HEAD gave a yucky");
+		}
+
+		if(repo_get_oid(the_repository, "ORIG_HEAD", &oid) == 0) {
+			commitptr = lookup_commit(the_repository, &oid);
+			strbuf_reset(&prettybuf);
+			strbuf_addstr(&prettybuf, "\nOn to ORIG_HEAD: \n");
+			strbuf_addstr(&prettybuf, oid_to_hex(&oid));
+			strbuf_addstr(&prettybuf, " - ");
+			pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
+			puts(prettybuf.buf);
+
+		} else {
+			printf("ORIG_HEAD gave a yucky");
+		}
+
+		strbuf_release(&prettybuf);
+		printf("====================\n");
+		//// re3stat end
 
 		/*
 		 * If there already is a different variant that applies
@@ -803,6 +843,45 @@ static void do_rerere_one_path(struct index_state *istate,
 	id->collection->status[variant] |= RR_HAS_PREIMAGE;
 	fprintf_ln(stderr, _("Recorded preimage for '%s'"), path);
 }
+
+static void re3log(char *path, char *item)
+{
+	struct object_id oid;
+	struct commit *commitptr = NULL;
+	struct strbuf prettybuf = STRBUF_INIT;
+
+	printf("===== RE3-STAT =====\n");
+	printf("Current variant id: %s\n", item);
+	printf("Is working on path: %s\n", path);
+
+	if(repo_get_oid(the_repository, "MERGE_HEAD", &oid) == 0) {
+		commitptr = lookup_commit(the_repository, &oid);
+		strbuf_reset(&prettybuf);
+		strbuf_addstr(&prettybuf, "\nFrom MERGE_HEAD: \n");
+		strbuf_addstr(&prettybuf, oid_to_hex(&oid));
+		strbuf_addstr(&prettybuf, " - ");
+		pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
+		puts(prettybuf.buf);
+	} else {
+		printf("MERGE_HEAD gave a yucky");
+	}
+
+	if(repo_get_oid(the_repository, "ORIG_HEAD", &oid) == 0) {
+		commitptr = lookup_commit(the_repository, &oid);
+		strbuf_reset(&prettybuf);
+		strbuf_addstr(&prettybuf, "\nOn to ORIG_HEAD: \n");
+		strbuf_addstr(&prettybuf, oid_to_hex(&oid));
+		strbuf_addstr(&prettybuf, " - ");
+		pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
+		puts(prettybuf.buf);
+
+	} else {
+		printf("ORIG_HEAD gave a yucky");
+	}
+
+	strbuf_release(&prettybuf);
+	printf("====================\n");
+	}
 
 static int do_plain_rerere(struct repository *r,
 			   struct string_list *rr, int fd)
