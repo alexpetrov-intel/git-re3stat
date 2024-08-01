@@ -6,6 +6,7 @@
 
 
 void save_rr_stats(const char *path, struct rerere_id *id);
-void write_commit(const char *path, const char *head_name, struct commit *commitptr);
+void write_history(struct rerere_id *id, const char *head_name, const char *stat_name);
+void write_history_file(struct rerere_id *id, const char *path, const char *stat_name);
 
 #endif

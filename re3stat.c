@@ -17,55 +17,59 @@ struct rerere_dir {
 
 void save_rr_stats(const char *path, struct rerere_id *id)
 {
-	FILE *f;
-	struct object_id oid;
-	struct commit *commitptr = NULL;
-	struct strbuf prettybuf = STRBUF_INIT;
-
 	printf("===== RE3-STAT =====\n");
-	printf("Current variant id: %s\n", id->collection->name);
-	printf("Is working on path: %s\n", path);
+	// printf("Current variant id: %s\n", id->collection->name);
+	// printf("Is working on path: %s\n", path);
 
-	if(repo_get_oid(the_repository, "MERGE_HEAD", &oid) == 0) {
+	write_history(id, "MERGE_HEAD", "merge_heads");
+	write_history(id, "ORIG_HEAD", "orig_heads");
+	write_history_file(id, path, "touched_files");
 
-		//write to file
-		printf("Writing current MERGE_HEAD to %s", rerere_path(id, "merge_list"));
-		f = fopen(rerere_path(id, "merge_list"), "a");
-		if (f){
-			commitptr = lookup_commit(the_repository, &oid);
-			strbuf_reset(&prettybuf);
-			pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
-
-			fputs(oid_to_hex(&oid), f);
-			fputs(" ", f);
-			fputs(prettybuf.buf, f);
-			fputs("\n", f);
-		} else {
-			printf("Could not open file");
-		}
-
-		fclose(f);
-	} else {
-		printf("No MERGE_HEAD");
-	}
-
-	if(repo_get_oid(the_repository, "ORIG_HEAD", &oid) == 0) {
-		commitptr = lookup_commit(the_repository, &oid);
-		strbuf_reset(&prettybuf);
-		strbuf_addstr(&prettybuf, "\nOn to ORIG_HEAD: \n");
-		strbuf_addstr(&prettybuf, oid_to_hex(&oid));
-		strbuf_addstr(&prettybuf, " - ");
-		pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
-		puts(prettybuf.buf);
-
-	} else {
-		printf("no ORIG_HEAD");
-	}
-
-	strbuf_release(&prettybuf);
 	printf("====================\n");
 }
 
-void write_commit(const char *path, const char *head_name, struct commit *commitptr) {
+void write_history(struct rerere_id *id, const char *ref_name, const char *stat_name)
+{
+	FILE *f;
+	struct object_id oid;
+	struct commit *commit = NULL;
+	struct strbuf outbuf = STRBUF_INIT;
 
+	if(repo_get_oid(the_repository, ref_name, &oid) != 0){
+		printf(_("No usable %s for logs"), ref_name);
+		return;
+	}
+
+	strbuf_reset(&outbuf);
+	commit = lookup_commit(the_repository, &oid);
+
+	strbuf_addstr(&outbuf, oid_to_hex(&oid));
+	strbuf_addstr(&outbuf, " ");
+	pp_commit_easy(CMIT_FMT_ONELINE, commit, &outbuf);
+
+
+	printf("Writing current MERGE_HEAD to %s", rerere_path(id, stat_name));
+	f = fopen(rerere_path(id, stat_name), "a");
+	if (!f){
+		printf("Error writing to file");
+		return;
+	}
+
+	fputs(outbuf.buf, f);
+	fclose(f);
+}
+
+void write_history_file(struct rerere_id *id, const char *path, const char *stat_name) {
+	FILE *f;
+
+	printf("Writing current MERGE_HEAD to %s", rerere_path(id, stat_name));
+	f = fopen(rerere_path(id, stat_name), "a");
+	if (!f){
+		printf("Error writing to file");
+		return;
+	}
+
+	fputs(path, f);
+	fputs("\n", f);
+	fclose(f);
 }
