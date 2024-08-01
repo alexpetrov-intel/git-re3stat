@@ -727,124 +727,7 @@ static void remove_variant(struct rerere_id *id)
 	id->collection->status[id->variant] = 0;
 }
 
-/*
- * The path indicated by rr_item may still have conflict for which we
- * have a recorded resolution, in which case replay it and optionally
- * update it.  Or it may have been resolved by the user and we may
- * only have the preimage for that conflict, in which case the result
- * needs to be recorded as a resolution in a postimage file.
- */
-static void do_rerere_one_path(struct index_state *istate,
-			       struct string_list_item *rr_item,
-			       struct string_list *update)
-{
-	const char *path = rr_item->string;
-	struct rerere_id *id = rr_item->util;
-	struct rerere_dir *rr_dir = id->collection;
-	int variant;
-	struct object_id oid; //re3stat experiment declaration
-	struct commit *commitptr = NULL; //re3stat
-	struct strbuf prettybuf = STRBUF_INIT;  //re3stat
-
-	variant = id->variant;
-
-	/* Has the user resolved it already? */
-	if (variant >= 0) {
-		if (!handle_file(istate, path, NULL, NULL)) {
-			copy_file(rerere_path(id, "postimage"), path, 0666);
-			id->collection->status[variant] |= RR_HAS_POSTIMAGE;
-			fprintf_ln(stderr, _("Recorded resolution for '%s'."), path);
-			free_rerere_id(rr_item);
-			rr_item->util = NULL;
-			return;
-		}
-		/*
-		 * There may be other variants that can cleanly
-		 * replay.  Try them and update the variant number for
-		 * this one.
-		 */
-	}
-
-	/* Does any existing resolution apply cleanly? */
-	for (variant = 0; variant < rr_dir->status_nr; variant++) {
-		const int both = RR_HAS_PREIMAGE | RR_HAS_POSTIMAGE;
-		struct rerere_id vid = *id;
-
-		if ((rr_dir->status[variant] & both) != both)
-			continue;
-
-		vid.variant = variant;
-		if (merge(istate, &vid, path))
-			continue; /* failed to replay */
-
-		//// re3stat experiment code start, a replay was successful
-		printf("===== RE3-STAT =====\n");
-		printf("Current variant id: %s\n", id->collection->name);
-		printf("Is working on path: %s\n", path);
-
-		if(repo_get_oid(the_repository, "MERGE_HEAD", &oid) == 0) {
-			commitptr = lookup_commit(the_repository, &oid);
-			strbuf_reset(&prettybuf);
-			strbuf_addstr(&prettybuf, "\nFrom MERGE_HEAD: \n");
-			strbuf_addstr(&prettybuf, oid_to_hex(&oid));
-			strbuf_addstr(&prettybuf, " - ");
-			pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
-			puts(prettybuf.buf);
-		} else {
-			printf("MERGE_HEAD gave a yucky");
-		}
-
-		if(repo_get_oid(the_repository, "ORIG_HEAD", &oid) == 0) {
-			commitptr = lookup_commit(the_repository, &oid);
-			strbuf_reset(&prettybuf);
-			strbuf_addstr(&prettybuf, "\nOn to ORIG_HEAD: \n");
-			strbuf_addstr(&prettybuf, oid_to_hex(&oid));
-			strbuf_addstr(&prettybuf, " - ");
-			pp_commit_easy(CMIT_FMT_ONELINE, commitptr, &prettybuf);
-			puts(prettybuf.buf);
-
-		} else {
-			printf("ORIG_HEAD gave a yucky");
-		}
-
-		strbuf_release(&prettybuf);
-		printf("====================\n");
-		//// re3stat end
-
-		/*
-		 * If there already is a different variant that applies
-		 * cleanly, there is no point maintaining our own variant.
-		 */
-		if (0 <= id->variant && id->variant != variant)
-			remove_variant(id);
-
-		if (rerere_autoupdate)
-			string_list_insert(update, path);
-		else
-			fprintf_ln(stderr,
-				   _("Resolved '%s' using previous resolution."),
-				   path);
-		free_rerere_id(rr_item);
-		rr_item->util = NULL;
-		return;
-	}
-
-	/* None of the existing one applies; we need a new variant */
-	assign_variant(id);
-
-	variant = id->variant;
-	handle_file(istate, path, NULL, rerere_path(id, "preimage"));
-	if (id->collection->status[variant] & RR_HAS_POSTIMAGE) {
-		const char *path = rerere_path(id, "postimage");
-		if (unlink(path))
-			die_errno(_("cannot unlink stray '%s'"), path);
-		id->collection->status[variant] &= ~RR_HAS_POSTIMAGE;
-	}
-	id->collection->status[variant] |= RR_HAS_PREIMAGE;
-	fprintf_ln(stderr, _("Recorded preimage for '%s'"), path);
-}
-
-static void re3log(char *path, char *item)
+static void re3log(const char *path, char *item)
 {
 	struct object_id oid;
 	struct commit *commitptr = NULL;
@@ -881,7 +764,90 @@ static void re3log(char *path, char *item)
 
 	strbuf_release(&prettybuf);
 	printf("====================\n");
+}
+
+/*
+ * The path indicated by rr_item may still have conflict for which we
+ * have a recorded resolution, in which case replay it and optionally
+ * update it.  Or it may have been resolved by the user and we may
+ * only have the preimage for that conflict, in which case the result
+ * needs to be recorded as a resolution in a postimage file.
+ */
+static void do_rerere_one_path(struct index_state *istate,
+			       struct string_list_item *rr_item,
+			       struct string_list *update)
+{
+	const char *path = rr_item->string;
+	struct rerere_id *id = rr_item->util;
+	struct rerere_dir *rr_dir = id->collection;
+	int variant;
+
+	variant = id->variant;
+
+	/* Has the user resolved it already? */
+	if (variant >= 0) {
+		if (!handle_file(istate, path, NULL, NULL)) {
+			copy_file(rerere_path(id, "postimage"), path, 0666);
+			id->collection->status[variant] |= RR_HAS_POSTIMAGE;
+			fprintf_ln(stderr, _("Recorded resolution for '%s'."), path);
+			free_rerere_id(rr_item);
+			rr_item->util = NULL;
+			return;
+		}
+		/*
+		 * There may be other variants that can cleanly
+		 * replay.  Try them and update the variant number for
+		 * this one.
+		 */
 	}
+
+	/* Does any existing resolution apply cleanly? */
+	for (variant = 0; variant < rr_dir->status_nr; variant++) {
+		const int both = RR_HAS_PREIMAGE | RR_HAS_POSTIMAGE;
+		struct rerere_id vid = *id;
+
+		if ((rr_dir->status[variant] & both) != both)
+			continue;
+
+		vid.variant = variant;
+		if (merge(istate, &vid, path))
+			continue; /* failed to replay */
+
+		//// re3stat experiment code, a replay was successful
+		re3log(path, id->collection->name);
+
+		/*
+		 * If there already is a different variant that applies
+		 * cleanly, there is no point maintaining our own variant.
+		 */
+		if (0 <= id->variant && id->variant != variant)
+			remove_variant(id);
+
+		if (rerere_autoupdate)
+			string_list_insert(update, path);
+		else
+			fprintf_ln(stderr,
+				   _("Resolved '%s' using previous resolution."),
+				   path);
+		free_rerere_id(rr_item);
+		rr_item->util = NULL;
+		return;
+	}
+
+	/* None of the existing one applies; we need a new variant */
+	assign_variant(id);
+
+	variant = id->variant;
+	handle_file(istate, path, NULL, rerere_path(id, "preimage"));
+	if (id->collection->status[variant] & RR_HAS_POSTIMAGE) {
+		const char *path = rerere_path(id, "postimage");
+		if (unlink(path))
+			die_errno(_("cannot unlink stray '%s'"), path);
+		id->collection->status[variant] &= ~RR_HAS_POSTIMAGE;
+	}
+	id->collection->status[variant] |= RR_HAS_PREIMAGE;
+	fprintf_ln(stderr, _("Recorded preimage for '%s'"), path);
+}
 
 static int do_plain_rerere(struct repository *r,
 			   struct string_list *rr, int fd)
